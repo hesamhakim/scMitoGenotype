@@ -1,6 +1,3 @@
-Okay, let's revamp the README with a more modern look, incorporating suggestions from best practices and adding a workflow visualization using Mermaid syntax (which renders directly on GitHub).
-
-```markdown
 # scMitoGenotype: Mitochondrial Genotyping from Single-Cell RNA-Seq
 
 <p align="center">
