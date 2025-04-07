@@ -1,72 +1,89 @@
 # scMitoGenotype: Mitochondrial Genotyping from Single-Cell RNA-Seq
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) <!-- Replace MIT with your actual license if different -->
+<p align="center">
+  <img src="https://img.shields.io/badge/Language-Bash%20%26%20R-blue" alt="Language: Bash & R">
+  <img src="https://img.shields.io/badge/Pipeline-Snakemake%20%26%20SLURM-lightgrey" alt="Pipeline: SLURM">
+  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status: Active">
+</p>
 
-## Overview
+## Overview ✨
 
-`scMitoGenotype` provides a collection of scripts to identify mitochondrial DNA (mtDNA) variants and quantify their allele frequency (AF) at the single-cell level from 10x Genomics single-cell RNA-seq (scRNA-seq) data.
+`scMitoGenotype` provides a streamlined workflow to identify mitochondrial DNA (mtDNA) variants and quantify their allele frequency (AF) at the single-cell level, starting from 10x Genomics single-cell RNA-seq (scRNA-seq) data.
 
-The workflow starts with standard scRNA-seq FASTQ processing using Cell Ranger. Subsequently, it offers three alternative tools for mtDNA variant genotyping directly from the Cell Ranger output BAM files:
+After initial FASTQ processing with Cell Ranger, this repository offers scripts implementing **three distinct tools** for mtDNA variant genotyping directly from BAM files:
 
-1.  **mgatk:** (Lareau et al., 2021, *Nat Biotechnol*) - A robust tool specifically designed for mtDNA analysis in single cells.
-2.  **cellSNP-lite:** (Xu et al., 2021, *Bioinformatics*) - An efficient tool for genotyping SNPs in single cells.
-3.  **SCReadCounts:** (Tian et al., 2021, *BMC Genomics*) - Estimates cell-level SNV expression from scRNA-seq.
+1.  🧬 **mgatk:** A robust tool specifically designed for mtDNA analysis in single cells.
+2.  🔬 **cellSNP-lite:** An efficient tool for genotyping SNPs in single cells.
+3.  📊 **SCReadCounts:** Estimates cell-level SNV expression from scRNA-seq data.
 
-Each tool has its own processing script (optimized for SLURM environments) and a corresponding R script to parse the output, filter variants based on user-defined criteria (depth, allele frequency), and generate a standardized cell-by-variant table.
+Each tool's pipeline includes SLURM-optimized processing scripts and corresponding R scripts for parsing, filtering (based on depth, AF), and generating standardized cell-by-variant tables.
 
-## Workflow
+## Workflow Diagram 🗺️
 
-The general workflow is as follows:
+```mermaid
+graph TD
+    subgraph Input
+        A[FASTQ Files]
+        B(Reference Transcriptome)
+    end
 
-1.  **FASTQ Processing:**
-    *   `cellranger_RNA_count.slurm`: Run `cellranger count` on raw FASTQ files to generate aligned BAM files and cell barcodes.
-2.  **Mitochondrial Genotyping (Choose ONE per sample):**
-    *   **Option A (mgatk):**
-        *   `mgatk_genotype.slurm`: Run `mgatk tenx` on the Cell Ranger BAM file.
-        *   `mgatk_analysis.R`: Process the resulting `.rds` file to call variants and generate a filtered table.
-    *   **Option B (cellSNP-lite):**
-        *   `cellSNP_lite.slurm`: Run `cellsnp-lite` on the Cell Ranger BAM file.
-        *   `process_cellSNP_output.R`: Process the resulting VCF and MTX files to generate a filtered table.
-    *   **Option C (SCReadCounts):**
-        *   `scReadCounts.slurm`: Run `SCReadCounts` (in chunks) on the Cell Ranger BAM file using pre-defined SNV lists.
-        *   *(Manual Step)*: Concatenate the chunked output TSV files.
-        *   `process_scReadCounts_output.R`: Process the concatenated TSV file to generate a filtered table.
-3.  **Output:**
-    *   A final CSV table for each sample and chosen tool, containing `variant_id`, `cell_id`, `DP` (Depth), and `AF` (Allele Frequency) for variants passing filters.
+    subgraph Step 1: Cell Ranger Processing
+        C{cellranger_RNA_count.slurm}
+        D[Aligned BAM File]
+        E[Cell Barcodes]
+    end
 
-## Repository Contents
+    subgraph Step 2: Mitochondrial Genotyping (Choose One)
+        direction LR
+        subgraph Option A: mgatk
+            F{mgatk_genotype.slurm} --> G((mgatk .rds Output))
+        end
+        subgraph Option B: cellSNP-lite
+            H{cellSNP_lite.slurm} --> I((VCF & MTX Output))
+        end
+        subgraph Option C: SCReadCounts
+            J{scReadCounts.slurm} --> K((Chunked TSV Output))
+        end
+    end
 
-*   `cellranger_RNA_count.slurm`: SLURM script for running `cellranger count`.
-*   `mgatk_genotype.slurm`: SLURM script for running `mgatk tenx`.
-*   `mgatk_analysis.R`: R script to process `mgatk` output (`.rds`) and generate a filtered variant table.
-*   `cellSNP_lite.slurm`: SLURM script for running `cellsnp-lite`.
-*   `process_cellSNP_output.R`: R script to process `cellsnp-lite` output (`.vcf`, `.mtx`) and generate a filtered variant table.
-*   `scReadCounts.slurm`: SLURM script for running `SCReadCounts` (in chunks).
-*   `process_scReadCounts_output.R`: R script to process concatenated `SCReadCounts` output (`.tsv`) and generate a filtered variant table.
-*   `run_list.txt`: **Example** configuration file defining samples, paths, and parameters for SLURM jobs. **Users must create and configure their own.**
-*   `README.md`: This file.
-*   `LICENSE`: Project license file (e.g., MIT).
+    subgraph Step 3: Post-Processing & Filtering
+        direction LR
+        subgraph Option A Post
+             L(mgatk_analysis.R)
+        end
+        subgraph Option B Post
+             M(process_cellSNP_output.R)
+        end
+        subgraph Option C Post
+             N(Concatenate TSV Chunks) --> O(process_scReadCounts_output.R)
+        end
+    end
 
-## Prerequisites
+    subgraph Output
+        P[Filtered Cell x Variant Table (.csv)]
+    end
 
-### Software
+    Input --> C;
+    C --> D;
+    C --> E;
+    D --> F; E --> F;
+    D --> H; E --> H;
+    D --> J; E --> J; B --> J; # SCReadCounts also needs SNV list implicitly
 
-*   **10x Genomics Cell Ranger:** For initial FASTQ processing (`cellranger count`). Version compatibility may vary; tested with vX.Y.Z.
-*   **mgatk:** Required for the `mgatk` pipeline branch. Installation typically via Conda.
-*   **cellSNP-lite:** Required for the `cellSNP-lite` pipeline branch. Installation typically via Conda.
-*   **SCReadCounts:** Required for the `SCReadCounts` pipeline branch. Download binary or compile from source.
-*   **SLURM Workload Manager:** The `.slurm` scripts are designed for clusters using SLURM. Modifications may be needed for other job schedulers.
-*   **R:** Version >= 4.0 recommended.
-*   **Conda:** Recommended for managing Python/tool dependencies.
-*   **Standard Unix tools:** `awk`, `gunzip`, `cat`, `mkdir`, etc.
+    G --> L;
+    I --> M;
+    K --> N;
+    O --> P;
+    L --> P;
+    M --> P;
 
-### R Packages
-
-Install the following R packages:
-
-```R
-install.packages(c("tidyverse", "Matrix", "data.table", "optparse", "logr", "SummarizedExperiment", "vcfR"))
-# Note: SummarizedExperiment is part of Bioconductor
-# if (!require("BiocManager", quietly = TRUE))
-#     install.packages("BiocManager")
-# BiocManager::install("SummarizedExperiment")
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+    style F fill:#ccf,stroke:#333,stroke-width:2px
+    style H fill:#cfc,stroke:#333,stroke-width:2px
+    style J fill:#fec,stroke:#333,stroke-width:2px
+    style L fill:#ccf,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style M fill:#cfc,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style N fill:#fec,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style O fill:#fec,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
+    style P fill:#bbf,stroke:#333,stroke-width:2px
