@@ -1,135 +1,61 @@
-# scMitoGenotype: Mitochondrial Genotyping from Single-Cell RNA-Seq
+# scMitoGenotype: Mitochondrial Genotyping from Single-Cell RNA-Seq Data
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Language-Bash%20%26%20R-blue" alt="Language: Bash & R">
-  <img src="https://img.shields.io/badge/Pipeline-Snakemake%20%26%20SLURM-lightgrey" alt="Pipeline: SLURM">
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT">
-  <img src="https://img.shields.io/badge/Status-Active-brightgreen" alt="Status: Active">
-</p>
+## Summary
 
-## Overview ✨
+This repository provides a collection of scripts designed to identify mitochondrial DNA (mtDNA) variants and quantify their allele frequency (AF) at the single-cell level using 10x Genomics single-cell RNA-seq (scRNA-seq) data. The workflow begins with processing raw FASTQ files using 10x Genomics Cell Ranger, followed by mtDNA variant genotyping from the resulting BAM files using one of three alternative tools: mgatk, cellSNP-lite, or SCReadCounts. Post-processing scripts are included to filter variants based on user-defined criteria (e.g., read depth, allele frequency) and generate standardized cell-by-variant tables suitable for downstream analysis.
 
-`scMitoGenotype` provides a streamlined workflow to identify mitochondrial DNA (mtDNA) variants and quantify their allele frequency (AF) at the single-cell level, starting from 10x Genomics single-cell RNA-seq (scRNA-seq) data.
+## Workflow Overview
 
-After initial FASTQ processing with Cell Ranger, this repository offers scripts implementing **three distinct tools** for mtDNA variant genotyping directly from BAM files:
+The analysis pipeline consists of the following major steps:
 
-1.  🧬 **mgatk:** A robust tool specifically designed for mtDNA analysis in single cells.
-2.  🔬 **cellSNP-lite:** An efficient tool for genotyping SNPs in single cells.
-3.  📊 **SCReadCounts:** Estimates cell-level SNV expression from scRNA-seq data.
+1.  **Initial scRNA-seq Processing:**
+    *   Raw FASTQ files are processed using `cellranger count` (via `cellranger_RNA_count.slurm`) to generate aligned BAM files, cell barcodes, and feature matrices.
 
-Each tool's pipeline includes SLURM-optimized processing scripts and corresponding R scripts for parsing, filtering (based on depth, AF), and generating standardized cell-by-variant tables.
+2.  **Mitochondrial Variant Genotyping (Choice of Tool):**
+    *   The aligned BAM file from Cell Ranger is processed using **one** of the following tools to identify potential mtDNA variants and quantify read support per cell:
+        *   **mgatk:** Utilizes `mgatk tenx` (via `mgatk_genotype.slurm`). Output is primarily a `.rds` object.
+        *   **cellSNP-lite:** Utilizes `cellsnp-lite` (via `cellSNP_lite.slurm`). Output includes VCF and MTX files.
+        *   **SCReadCounts:** Utilizes the `SCReadCounts` binary (via `scReadCounts.slurm`), typically run on chunks of a predefined SNV list. Output consists of multiple TSV files.
 
-## Workflow Diagram 🗺️
+3.  **Post-Processing and Filtering:**
+    *   The output from the chosen genotyping tool is processed using a corresponding R script (`mgatk_analysis.R`, `process_cellSNP_output.R`, or `process_scReadCounts_output.R`).
+    *   *(SCReadCounts only)*: Output TSV files from chunks must be concatenated into a single file before running the R script.
+    *   These R scripts calculate allele frequencies (if not already present), apply user-defined filters based on read depth (DP) and allele frequency (AF), and generate a final filtered table.
 
-```mermaid
-graph TD
-    subgraph Input
-        A[FASTQ Files]
-        B(Reference Transcriptome)
-    end
+4.  **Final Output:**
+    *   A comma-separated value (CSV) file for each sample, containing columns `variant_id`, `cell_id`, `DP`, and `AF` for variants and cells passing the specified filters.
 
-    subgraph Step 1: Cell Ranger Processing
-        C{cellranger_RNA_count.slurm}
-        D[Aligned BAM File]
-        E[Cell Barcodes]
-    end
+## System Requirements
 
-    subgraph Step 2: Mitochondrial Genotyping (Choose One)
-        direction LR
-        subgraph Option A: mgatk
-            F{mgatk_genotype.slurm} --> G((mgatk .rds Output))
-        end
-        subgraph Option B: cellSNP-lite
-            H{cellSNP_lite.slurm} --> I((VCF & MTX Output))
-        end
-        subgraph Option C: SCReadCounts
-            J{scReadCounts.slurm} --> K((Chunked TSV Output))
-        end
-    end
+### Software Dependencies
 
-    subgraph Step 3: Post-Processing & Filtering
-        direction LR
-        subgraph Option A Post
-             L(mgatk_analysis.R)
-        end
-        subgraph Option B Post
-             M(process_cellSNP_output.R)
-        end
-        subgraph Option C Post
-             N(Concatenate TSV Chunks) --> O(process_scReadCounts_output.R)
-        end
-    end
+*   **10x Genomics Cell Ranger:** (e.g., v7.x or compatible version)
+*   **mgatk:** Required for the mgatk pipeline branch. (Installation via Conda recommended).
+*   **cellSNP-lite:** Required for the cellSNP-lite pipeline branch. (Installation via Conda recommended).
+*   **SCReadCounts:** Required for the SCReadCounts pipeline branch. (Binary executable required).
+*   **SLURM Workload Manager:** Scripts are written for SLURM job submission. Adaptation may be required for other schedulers (e.g., SGE, PBS).
+*   **R:** Version >= 4.0 recommended.
+*   **Conda:** Recommended for managing software environments.
+*   **Standard Unix/Linux command-line tools:** `awk`, `gunzip`, `cat`, `mkdir`, `bash`, etc.
 
-    subgraph Output
-        P[Filtered Cell x Variant Table (.csv)]
-    end
+### R Package Dependencies
 
-    Input --> C;
-    C --> D;
-    C --> E;
-    D --> F; E --> F;
-    D --> H; E --> H;
-    D --> J; E --> J; B --> J; # SCReadCounts also needs SNV list implicitly
+The following R packages are required for the post-processing scripts:
 
-    G --> L;
-    I --> M;
-    K --> N;
-    O --> P;
-    L --> P;
-    M --> P;
+*   `tidyverse`
+*   `Matrix`
+*   `data.table`
+*   `optparse`
+*   `logr`
+*   `SummarizedExperiment` (from Bioconductor)
+*   `vcfR`
 
-    style C fill:#f9f,stroke:#333,stroke-width:2px
-    style F fill:#ccf,stroke:#333,stroke-width:2px
-    style H fill:#cfc,stroke:#333,stroke-width:2px
-    style J fill:#fec,stroke:#333,stroke-width:2px
-    style L fill:#ccf,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
-    style M fill:#cfc,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
-    style N fill:#fec,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
-    style O fill:#fec,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5
-    style P fill:#bbf,stroke:#333,stroke-width:2px
-
-```
-
-## Key Features 🚀
-
-*   **Flexible Genotyping:** Choose from three popular tools (mgatk, cellSNP-lite, SCReadCounts).
-*   **SLURM Integration:** Scripts are optimized for SLURM cluster environments using array jobs for easy parallelization across samples.
-*   **Configurable Filtering:** R scripts allow easy adjustment of depth (DP) and allele frequency (AF) thresholds.
-*   **Standardized Output:** Generates consistent CSV tables (`variant_id`, `cell_id`, `DP`, `AF`) regardless of the tool used.
-*   **Reproducibility:** Provides a clear, script-based workflow from FASTQ to variant tables.
-
-## Repository Contents 📁
-
-*   `cellranger_RNA_count.slurm`: Runs `cellranger count`.
-*   `mgatk_genotype.slurm`: Runs `mgatk tenx`.
-*   `mgatk_analysis.R`: Processes `mgatk` output.
-*   `cellSNP_lite.slurm`: Runs `cellsnp-lite`.
-*   `process_cellSNP_output.R`: Processes `cellsnp-lite` output.
-*   `scReadCounts.slurm`: Runs `SCReadCounts` (in chunks).
-*   `process_scReadCounts_output.R`: Processes concatenated `SCReadCounts` output.
-*   `run_list.txt`: **Example** configuration file. **Create your own!**
-*   `README.md`: This file.
-*   `LICENSE`: Project license file (e.g., MIT).
-
-## Prerequisites 🛠️
-
-### Software
-
-*   **10x Genomics Cell Ranger:** (e.g., v7.x)
-*   **mgatk:** (Install via Conda recommended)
-*   **cellSNP-lite:** (Install via Conda recommended)
-*   **SCReadCounts:** (Binary or compiled)
-*   **SLURM Workload Manager**
-*   **R:** (>= 4.0 recommended)
-*   **Conda:** (Recommended for environment management)
-*   **Standard Unix tools:** `awk`, `gunzip`, `cat`, `mkdir`, etc.
-
-### R Packages
-
+Installation command within R:
 ```R
-# Run in R console
+# Install CRAN packages
 install.packages(c("tidyverse", "Matrix", "data.table", "optparse", "logr", "vcfR"))
 
+# Install Bioconductor packages
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 BiocManager::install("SummarizedExperiment")
@@ -137,81 +63,58 @@ BiocManager::install("SummarizedExperiment")
 
 ### Input Data
 
-*   Raw scRNA-seq FASTQ files (10x Genomics).
-*   Cell Ranger compatible reference transcriptome.
-*   (For SCReadCounts) Pre-split mitochondrial SNV list files.
+*   Raw scRNA-seq FASTQ files (typically from 10x Genomics platform).
+*   A Cell Ranger compatible reference transcriptome (e.g., GRCh38).
+*   *(For SCReadCounts)*: A directory containing pre-split mitochondrial SNV list files (format: `chr\tpos\tref\talt`). See `scReadCounts.slurm` configuration.
 
----
+## Installation and Setup
 
-## Quick Start Instructions 🏁
-
-1.  **Setup ⚙️:**
-    *   Clone repo: `git clone ...`
-    *   Install prerequisites (Software & R packages).
-    *   Create **your** `run_list.txt` (tab-separated: `ID`, `SampleName`, `FastqDir`, `TranscriptomePath`, `ExpectedCells`, `ProjectDir`).
-    *   Edit **all** `.slurm` scripts: Update `RUN_LIST_FILE` path, `#SBATCH` directives (qos, account, resources, array range), and environment setup (modules/conda).
-    *   Create `logs` directory: `mkdir logs`.
-
-2.  **Usage ▶️:**
-    *   Run Cell Ranger: `sbatch cellranger_RNA_count.slurm`. Wait.
-    *   Choose **one** genotyping tool (mgatk, cellSNP-lite, or SCReadCounts).
-    *   Run chosen tool's SLURM script: `sbatch mgatk_genotype.slurm` **OR** `sbatch cellSNP_lite.slurm` **OR** `sbatch scReadCounts.slurm`. Wait.
-    *   **(SCReadCounts Only) Concatenate Output 🧩:** Combine chunked `.tsv` files: `cat path/to/scReadCounts_*.tsv | gzip > path/to/scReadCounts_filtered.tsv.gz`.
-    *   Run corresponding R script (e.g., `Rscript mgatk_analysis.R --rds_file ... --output_prefix ...`) with correct paths and filtering parameters.
-
----
-
-## Detailed Setup 🔧
-
-1.  **Clone Repository:**
+1.  **Obtain Repository:** Clone the repository using Git:
     ```bash
     git clone https://github.com/your-username/scMitoGenotype.git
     cd scMitoGenotype
     ```
 
-2.  **Install Dependencies:**
-    *   Ensure Cell Ranger, mgatk, cellSNP-lite, and SCReadCounts are installed and accessible (e.g., via `module load` or Conda). See Prerequisites.
-    *   Install required R packages (see Prerequisites).
-    *   *Example Conda setup:*
-        ```bash
-        conda create -n mgatk_env mgatk picard R -c bioconda -c conda-forge
-        conda create -n cellsnp_env cellsnp-lite R -c bioconda -c conda-forge
-        # Ensure SCReadCounts binary is accessible
-        ```
+2.  **Install Software:** Ensure all software dependencies (Cell Ranger, mgatk, cellSNP-lite, SCReadCounts, R, Conda) are installed and accessible within your computing environment. Use Conda environments or module systems as appropriate.
 
-3.  **Configure `run_list.txt`:**
-    *   Create a **tab-separated** file (e.g., `my_run_list.txt`). Columns **must** match the order expected by the `awk` commands in the `.slurm` scripts (or modify the scripts):
-        1.  `ID`: Numeric ID (1, 2, 3...) matching SLURM array index.
-        2.  `SampleName` / `RunName`: Sample identifier.
-        3.  `FastqDir`: Path to FASTQ directory (for `cellranger_RNA_count.slurm`).
-        4.  `TranscriptomePath`: Path to Cell Ranger reference (for `cellranger_RNA_count.slurm`).
-        5.  `ExpectedCells`: Estimated cells (for `cellranger_RNA_count.slurm`).
-        6.  `ProjectDir`: Base path for input/output subdirectories.
+3.  **Install R Packages:** Install the required R packages using the commands provided in the "R Package Dependencies" section.
+
+4.  **Prepare Configuration File (`run_list.txt`):**
+    *   Create a **tab-separated** text file (e.g., `my_run_list.txt`). This file defines the samples to be processed and their associated paths.
+    *   Each line corresponds to one sample.
+    *   The columns **must** be in the following order (or the `awk` commands within the `.slurm` scripts must be adjusted):
+        1.  `ID`: A unique numeric identifier for each sample, starting from 1. This corresponds to the SLURM array task ID.
+        2.  `SampleName` / `RunName`: A unique name for the sample or run, used for directory and file naming.
+        3.  `FastqDir`: Full path to the directory containing FASTQ files for the sample (used by `cellranger_RNA_count.slurm`).
+        4.  `TranscriptomePath`: Full path to the Cell Ranger reference transcriptome directory (used by `cellranger_RNA_count.slurm`).
+        5.  `ExpectedCells`: Estimated number of cells for the sample (used by `cellranger_RNA_count.slurm`).
+        6.  `ProjectDir`: The base directory path where output subdirectories (e.g., `cellranger_RNA_out`, `mgatk_out`) will be created or accessed.
     *   *Example `my_run_list.txt`:*
         ```text
-        1	SampleA	/path/to/fastqs/SampleA	/path/to/refdata-GRCh38	5000	/project/base/path
-        2	SampleB	/path/to/fastqs/SampleB	/path/to/refdata-GRCh38	6000	/project/base/path
+        1	SampleA	/path/to/data/fastqs/SampleA	/path/to/refs/refdata-GRCh38	5000	/path/to/project/output
+        2	SampleB	/path/to/data/fastqs/SampleB	/path/to/refs/refdata-GRCh38	6000	/path/to/project/output
         ```
 
-4.  **Configure SLURM Scripts:**
-    *   **Crucially, edit each `.slurm` script:**
-        *   Set `RUN_LIST_FILE` to your `run_list.txt` path.
-        *   Adjust `#SBATCH` directives (qos, account, time, mem, cpus, array range `1-N`).
-        *   Verify/update the "Environment Setup" section (modules/conda activation).
-        *   **`scReadCounts.slurm`:** Update `SCREADCOUNTS_BIN_DIR` and `SNV_LIST_DIR`.
-    *   Create `logs` directory: `mkdir logs` (or update log paths in scripts).
+5.  **Configure SLURM Scripts:**
+    *   **Critically, edit each `.slurm` script** (`cellranger_RNA_count.slurm`, `mgatk_genotype.slurm`, `cellSNP_lite.slurm`, `scReadCounts.slurm`):
+        *   Update the `RUN_LIST_FILE` variable to point to the **absolute path** of your `run_list.txt` file.
+        *   Modify the `#SBATCH` directives (e.g., `--qos`, `--account`, `--time`, `--mem`, `--cpus-per-task`) to match your cluster's requirements and resource availability.
+        *   Set the `#SBATCH --array=1-N` directive, where `N` is the total number of samples (lines) in your `run_list.txt`.
+        *   Verify and adjust the "Environment Setup" section in each script to correctly load necessary modules or activate Conda environments required for the specific tool being run.
+        *   **For `scReadCounts.slurm`:** Update `SCREADCOUNTS_BIN_DIR` (path to the SCReadCounts executable directory) and `SNV_LIST_DIR` (path to the directory containing pre-split SNV files).
+    *   Create a directory (e.g., `logs`) in the location from which you will submit jobs, to store SLURM output and error files, or modify the `#SBATCH -o` and `#SBATCH -e` paths accordingly.
 
-## Detailed Usage 🚀
+## Usage Instructions
 
-Execute sequentially for each sample array job.
+The workflow involves submitting SLURM jobs sequentially. Ensure each step completes successfully before proceeding to the next.
 
-1.  **Run Cell Ranger:**
+1.  **Run Cell Ranger:** Submit the Cell Ranger processing job for all samples defined in the array:
     ```bash
     sbatch cellranger_RNA_count.slurm
     ```
-    Monitor jobs and wait for successful completion.
+    Monitor the jobs using SLURM commands (e.g., `squeue`) and wait for completion. Check logs for errors.
 
-2.  **Run Genotyping (Choose ONE tool):**
+2.  **Run Genotyping:** Choose **one** genotyping tool and submit the corresponding SLURM job:
     *   **Option A (mgatk):**
         ```bash
         sbatch mgatk_genotype.slurm
@@ -224,71 +127,78 @@ Execute sequentially for each sample array job.
         ```bash
         sbatch scReadCounts.slurm
         ```
-    Monitor jobs and wait for successful completion.
+    Monitor the jobs and wait for completion. Check logs for errors.
 
-3.  **(SCReadCounts Only) Concatenate Output:**
-    *   Combine the output chunks for each sample.
-    *   *Example:*
+3.  **(SCReadCounts Only) Concatenate Output Files:** If SCReadCounts was used, combine the chunked output files (`scReadCounts_*.tsv`) into a single file for each sample before running the R script. This can be done using standard command-line tools.
+    *   *Example for one sample:*
         ```bash
-        PROJECT_DIR="/project/base/path" # From run_list.txt
-        RUN_NAME="SampleA"             # From run_list.txt
+        # Define variables based on your run_list.txt and paths
+        PROJECT_DIR="/path/to/project/output"
+        RUN_NAME="SampleA"
         OUTPUT_DIR="${PROJECT_DIR}/scReadCounts_out/${RUN_NAME}/MT"
-        echo "Concatenating SCReadCounts output for ${RUN_NAME}..."
-        cat ${OUTPUT_DIR}/scReadCounts_*.tsv | gzip > ${OUTPUT_DIR}/scReadCounts_filtered.tsv.gz
-        echo "Done."
-        ```
 
-4.  **Run R Processing Script:**
-    *   Execute the R script corresponding to the chosen tool, providing appropriate arguments.
+        echo "Concatenating output for ${RUN_NAME}..."
+        cat ${OUTPUT_DIR}/scReadCounts_*.tsv | gzip > ${OUTPUT_DIR}/scReadCounts_filtered.tsv.gz
+        echo "Concatenation complete for ${RUN_NAME}."
+        ```
+    Repeat this concatenation for each sample processed with SCReadCounts.
+
+4.  **Run R Post-Processing:** Execute the R script corresponding to the genotyping tool used in Step 2. Provide appropriate command-line arguments for input paths, output file names, and filtering parameters. Run this step for each sample individually.
     *   *Example (mgatk):*
         ```bash
         Rscript mgatk_analysis.R \
-            --rds_file /project/base/path/mgatk_out/SampleA/final/SampleA.rds \
-            --output_prefix results/SampleA_filtered_mgatk \
-            --min_dp 10 --min_af 0.03 --max_af 0.97 \
+            --rds_file /path/to/project/output/mgatk_out/SampleA/final/SampleA.rds \
+            --output_prefix /path/to/project/output/results/SampleA_filtered_mgatk \
+            --min_dp 10 \
+            --min_af 0.03 \
+            --max_af 0.97 \
             --log_file logs/SampleA_mgatk_analysis.log
+            # Add other relevant parameters like --min_cells_conf_detected if needed
         ```
     *   *Example (cellSNP-lite):*
         ```bash
         Rscript process_cellSNP_output.R \
-            --input_dir /project/base/path/scSNP_lite_out/SampleA \
-            --output_file results/SampleA_filtered_cellSNP.csv \
-            --min_dp 10 --min_ad 2 --min_af 0.03 --max_af 0.90 \
+            --input_dir /path/to/project/output/scSNP_lite_out/SampleA \
+            --output_file /path/to/project/output/results/SampleA_filtered_cellSNP.csv \
+            --min_dp 10 \
+            --min_ad 2 \
+            --min_af 0.03 \
+            --max_af 0.90 \
             --log_file logs/SampleA_process_cellSNP.log
         ```
     *   *Example (SCReadCounts):*
         ```bash
         Rscript process_scReadCounts_output.R \
-            --input_file /project/base/path/scReadCounts_out/SampleA/MT/scReadCounts_filtered.tsv.gz \
-            --output_file results/SampleA_filtered_scReadCounts.csv \
-            --min_dp 10 --min_af 0.03 --max_af 0.90 \
+            --input_file /path/to/project/output/scReadCounts_out/SampleA/MT/scReadCounts_filtered.tsv.gz \
+            --output_file /path/to/project/output/results/SampleA_filtered_scReadCounts.csv \
+            --min_dp 10 \
+            --min_af 0.03 \
+            --max_af 0.90 \
             --log_file logs/SampleA_process_scReadCounts.log
         ```
-    *   Ensure output directories (e.g., `results/`) exist. Adjust parameters as needed.
+    Ensure output directories (e.g., `/path/to/project/output/results/`) exist before running the R scripts.
 
-## Output Files 📊
+## Output Description
 
-*   **Intermediate:** Cell Ranger outputs, tool-specific outputs (`.rds`, VCF/MTX, `.tsv` chunks).
-*   **Final:** A CSV file per sample/tool (e.g., `results/SampleA_filtered_mgatk.csv`) with columns:
-    *   `variant_id`: Variant identifier (e.g., `A1624G`).
-    *   `cell_id`: Cell barcode.
-    *   `DP`: Read depth for the variant in the cell.
-    *   `AF`: Allele frequency for the variant in the cell.
+The primary output of this workflow is a set of CSV files (one per sample per tool used), typically saved in a results directory specified during the R script execution. Each file contains the filtered list of mitochondrial variants detected in single cells, with the following columns:
 
-## Contributing 🤝
+*   `variant_id`: A unique identifier for the mitochondrial variant (e.g., `A1624G`, combining reference allele, position, and alternate allele).
+*   `cell_id`: The cell barcode identifying the single cell.
+*   `DP`: Read Depth. The number of reads covering the variant position in that specific cell, supporting the allele frequency calculation (derived from `coverage` in mgatk, `DP` in cellSNP-lite, `GoodReads` in SCReadCounts).
+*   `AF`: Allele Frequency. The fraction of reads supporting the alternate allele at the variant position in that specific cell.
 
-Contributions are welcome! Please feel free to submit issues or pull requests for improvements, bug fixes, or new features.
+Intermediate files generated by Cell Ranger and the genotyping tools are stored in subdirectories specified within the SLURM scripts (e.g., `cellranger_RNA_out`, `mgatk_out`, `scSNP_lite_out`, `scReadCounts_out`).
 
-## License 📜
+## License
 
-This project is licensed under the [MIT License](LICENSE).
+This project is distributed under the terms of the MIT License. See the `LICENSE` file for details.
 
-## Citation 🙏
+## Citation
 
-If you use these scripts or the integrated tools in your research, please cite the original publications:
+If you use these scripts or the integrated tools in your research, please cite the original publications for the respective tools:
 
-*   **mgatk:** Lareau, C.A., et al. *Nat Biotechnol* 39, 451–461 (2021). [doi:10.1038/s41587-020-00791-x](https://doi.org/10.1038/s41587-020-00791-x)
-*   **cellSNP-lite:** Xu, R., et al. *Bioinformatics*, 37(23), 4569–4571 (2021). [doi:10.1093/bioinformatics/btab340](https://doi.org/10.1093/bioinformatics/btab340)
-*   **SCReadCounts:** Tian, T., et al. *BMC Genomics* 22, 670 (2021). [doi:10.1186/s12864-021-07974-8](https://doi.org/10.1186/s12864-021-07974-8)
+*   **mgatk:** Lareau, C.A., Ludwig, L.S., Muus, C. et al. Massively parallel single-cell mitochondrial DNA genotyping and chromatin profiling. *Nat Biotechnol* 39, 451–461 (2021). [https://doi.org/10.1038/s41587-020-00791-x](https://doi.org/10.1038/s41587-020-00791-x)
+*   **cellSNP-lite:** Xu, R., Huang, Y., & Yuan, H. cellsnp-lite: an efficient tool for genotyping single cells. *Bioinformatics*, 37(23), 4569–4571 (2021). [https://doi.org/10.1093/bioinformatics/btab340](https://doi.org/10.1093/bioinformatics/btab340)
+*   **SCReadCounts:** Tian, T., Zhang, J., Liu, J. et al. SCReadCounts: estimation of cell-level SNVs expression from scRNA-seq data. *BMC Genomics* 22, 670 (2021). [https://doi.org/10.1186/s12864-021-07974-8](https://doi.org/10.1186/s12864-021-07974-8)
 
 ```
