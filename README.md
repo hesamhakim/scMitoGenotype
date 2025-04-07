@@ -97,7 +97,7 @@ BiocManager::install("SummarizedExperiment")
 
 5.  **Configure SLURM Scripts:**
     *   **Critically, edit each `.slurm` script** (`cellranger_RNA_count.slurm`, `mgatk_genotype.slurm`, `cellSNP_lite.slurm`, `scReadCounts.slurm`):
-        *   Update the `RUN_LIST_FILE` variable to point to the **absolute path** of your `run_list.txt` file.
+        *   Update the `RUN_LIST_FILE` variable to  point to the **absolute path** of your `run_list.txt` file.
         *   Modify the `#SBATCH` directives (e.g., `--qos`, `--account`, `--time`, `--mem`, `--cpus-per-task`) to match your cluster's requirements and resource availability.
         *   Set the `#SBATCH --array=1-N` directive, where `N` is the total number of samples (lines) in your `run_list.txt`.
         *   Verify and adjust the "Environment Setup" section in each script to correctly load necessary modules or activate Conda environments required for the specific tool being run.
